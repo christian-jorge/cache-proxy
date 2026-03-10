@@ -1,7 +1,7 @@
+import sys
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 import httpx
-import json
 
 app = FastAPI(title="Anthropic Cache Proxy")
 
@@ -16,7 +16,6 @@ async def health():
 
 @app.post("/debug")
 async def debug_transform(request: Request):
-    """Mostra como o proxy transforma o body SEM enviar para Anthropic"""
     body = await request.json()
     original_system_type = type(body.get("system")).__name__
 
@@ -46,7 +45,9 @@ async def debug_transform(request: Request):
 async def proxy_messages(request: Request):
     body = await request.json()
 
-    # Converte system string → array com cache_control
+    print(f"[PROXY] model: {body.get('model')}", file=sys.stderr, flush=True)
+    print(f"[PROXY] system type entrada: {type(body.get('system')).__name__}", file=sys.stderr, flush=True)
+
     if isinstance(body.get("system"), str) and body["system"].strip():
         body["system"] = [
             {
@@ -55,15 +56,19 @@ async def proxy_messages(request: Request):
                 "cache_control": {"type": "ephemeral"},
             }
         ]
+        print(f"[PROXY] system convertido para array com cache_control", file=sys.stderr, flush=True)
     elif isinstance(body.get("system"), list) and body["system"]:
-        # Garante cache_control no último bloco do array
         body["system"][-1]["cache_control"] = {"type": "ephemeral"}
+        print(f"[PROXY] cache_control injetado no ultimo bloco do array", file=sys.stderr, flush=True)
 
-    # Injeta cache_control na última tool
     if body.get("tools") and isinstance(body["tools"], list):
         body["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+        print(f"[PROXY] cache_control injetado na ultima tool ({len(body['tools'])} tools)", file=sys.stderr, flush=True)
 
-    # Monta headers para Anthropic
+    if isinstance(body.get("system"), list):
+        total_chars = sum(len(b.get("text", "")) for b in body["system"])
+        print(f"[PROXY] system chars: {total_chars} (~{total_chars//4} tokens estimados)", file=sys.stderr, flush=True)
+
     api_key = (
         request.headers.get("x-api-key")
         or request.headers.get("authorization", "").replace("Bearer ", "")
@@ -75,7 +80,6 @@ async def proxy_messages(request: Request):
         "content-type": "application/json",
     }
 
-    # Repassa streaming se solicitado
     is_streaming = body.get("stream", False)
 
     async with httpx.AsyncClient(timeout=300) as client:
@@ -100,7 +104,14 @@ async def proxy_messages(request: Request):
                 json=body,
                 headers=headers,
             )
+            response_data = resp.json()
+
+            usage = response_data.get("usage", {})
+            print(f"[PROXY] cache_creation_input_tokens: {usage.get('cache_creation_input_tokens', 'N/A')}", file=sys.stderr, flush=True)
+            print(f"[PROXY] cache_read_input_tokens: {usage.get('cache_read_input_tokens', 'N/A')}", file=sys.stderr, flush=True)
+            print(f"[PROXY] input_tokens: {usage.get('input_tokens', 'N/A')}", file=sys.stderr, flush=True)
+
             return JSONResponse(
-                content=resp.json(),
+                content=response_data,
                 status_code=resp.status_code,
             )
