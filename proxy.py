@@ -14,6 +14,34 @@ async def health():
     return {"status": "ok", "service": "anthropic-cache-proxy"}
 
 
+@app.post("/debug")
+async def debug_transform(request: Request):
+    """Mostra como o proxy transforma o body SEM enviar para Anthropic"""
+    body = await request.json()
+    original_system_type = type(body.get("system")).__name__
+
+    if isinstance(body.get("system"), str) and body["system"].strip():
+        body["system"] = [
+            {
+                "type": "text",
+                "text": body["system"][:100] + "...(truncado)",
+                "cache_control": {"type": "ephemeral"},
+            }
+        ]
+    elif isinstance(body.get("system"), list) and body["system"]:
+        body["system"][-1]["cache_control"] = {"type": "ephemeral"}
+
+    if body.get("tools") and isinstance(body["tools"], list):
+        body["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+
+    return {
+        "original_system_type": original_system_type,
+        "transformed_system": body.get("system"),
+        "tools_count": len(body.get("tools", [])),
+        "last_tool_has_cache": "cache_control" in (body.get("tools") or [{}])[-1],
+    }
+
+
 @app.post("/v1/messages")
 async def proxy_messages(request: Request):
     body = await request.json()
