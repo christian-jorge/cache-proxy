@@ -73,7 +73,7 @@ def build_system_blocks(system_text: str):
         {
             "type": "text",
             "text": static_part,
-            "cache_control": {"type": "ephemeral"},
+            "cache_control": {"type": "ephemeral", "ttl": "1h"},
         }
     ]
     
@@ -106,7 +106,7 @@ async def debug_transform(request: Request):
         static_part, dynamic_part = str(system_text), None
 
     if body.get("tools") and isinstance(body["tools"], list):
-        body["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+        body["tools"][-1]["cache_control"] = {"type": "ephemeral", "ttl": "1h"}
 
     return {
         "original_system_type": original_system_type,
@@ -130,12 +130,12 @@ async def proxy_messages(request: Request):
         body["system"] = build_system_blocks(body["system"])
         print(f"[PROXY] system convertido para array com cache_control", file=sys.stderr, flush=True)
     elif isinstance(body.get("system"), list) and body["system"]:
-        body["system"][-1]["cache_control"] = {"type": "ephemeral"}
+        body["system"][-1]["cache_control"] = {"type": "ephemeral", "ttl": "1h"}
         print(f"[PROXY] cache_control injetado no ultimo bloco do array", file=sys.stderr, flush=True)
 
     # Injeta cache_control na última tool
     if body.get("tools") and isinstance(body["tools"], list):
-        body["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+        body["tools"][-1]["cache_control"] = {"type": "ephemeral", "ttl": "1h"}
         print(f"[PROXY] cache_control injetado na ultima tool ({len(body['tools'])} tools)", file=sys.stderr, flush=True)
 
     if isinstance(body.get("system"), list):
